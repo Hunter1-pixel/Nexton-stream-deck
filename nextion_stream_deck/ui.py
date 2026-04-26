@@ -342,7 +342,8 @@ class App:
             if is_three_by_two:
                 # 3x2: tiles fill available space with sticky expansion
                 tile.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
-                button.pack(fill="both", expand=True)
+                # Use place to make button fill entire tile
+                button.place(relx=0, rely=0, relwidth=1, relheight=1)
             else:
                 # Fixed size for other layouts
                 tile.grid(row=row, column=col, sticky="nw", padx=8, pady=8)
@@ -387,16 +388,8 @@ class App:
         return f"{self.profile.cols} x {self.profile.rows}"
 
     def _sync_window_mode_with_layout(self) -> None:
-        is_three_by_two = self.profile.cols == 3 and self.profile.rows == 2
-        try:
-            if is_three_by_two:
-                self.root.state("zoomed")
-            else:
-                if self.root.state() == "zoomed":
-                    self.root.state("normal")
-                self.root.geometry(self.default_geometry)
-        except tk.TclError:
-            pass
+        # Don't auto-zoom window - just ensure tiles expand to fill available space
+        pass
 
     def refresh_ports(self) -> None:
         ports = self.bridge.available_ports()
