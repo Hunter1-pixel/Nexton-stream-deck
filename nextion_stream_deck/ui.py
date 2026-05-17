@@ -18,7 +18,7 @@ from nextion_stream_deck.serial_bridge import NextionBridge
 
 ACTION_TYPES = ("launch", "url", "command", "hotkey")
 APP_TITLE = "NextDeck"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 LAYOUT_PRESETS = {
     "5 x 3": (5, 3),
     "3 x 2": (3, 2),
@@ -27,7 +27,7 @@ IMAGE_SIZE = 96
 MIN_TILE_IMAGE = 44
 MAX_ICON_CACHE_ITEMS = 96
 PANEL_WIDTH = 440
-HEADER_HEIGHT = 108
+HEADER_HEIGHT = 96
 OUTER_PAD = 24
 
 THEME = {
@@ -55,6 +55,7 @@ class App:
         self.default_geometry = "1460x900"
         self.root.geometry(self.default_geometry)
         self.root.minsize(1220, 760)
+        self.root.state("zoomed")
         self.profile_path = DEFAULT_PROFILE_PATH
         self.profile = load_profile(self.profile_path)
         ensure_page_shape(self.profile)
@@ -110,9 +111,13 @@ class App:
 
     def _load_brand_assets(self) -> None:
         self.background_image = self._load_photo(resource_path("assets", "background", "cool background.png"))
-        self.logo_image = self._load_photo(resource_path("assets", "logo", "Nextdeck logo.png"), subsample=12)
-        self.header_logo = self._load_photo(resource_path("assets", "logo", "Nextdeck logo.png"), subsample=18)
-        self.icon_logo = self._load_photo(resource_path("assets", "logo", "Nextdeck logo.png"), subsample=14)
+        rounded_logo = resource_path("assets", "icons", "NextDeck-rounded.png")
+        base_logo = resource_path("assets", "logo", "Nextdeck logo.png")
+        display_logo = rounded_logo if rounded_logo.exists() else base_logo
+        self.logo_full = self._load_photo(display_logo)
+        self.logo_image = self._load_photo(display_logo, subsample=4)
+        self.header_logo = self._load_photo(display_logo, subsample=7)
+        self.icon_logo = self.logo_full or self._load_photo(display_logo, subsample=5)
         if self.icon_logo:
             self.root.iconphoto(True, self.icon_logo)
 
@@ -161,14 +166,14 @@ class App:
         self.background_canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.background_item = self.background_canvas.create_image(0, 0, anchor="center", image=self.background_image)
 
-        self.top_frame = tk.Frame(self.root, bg=colors["window_bg"], padx=26, pady=16)
+        self.top_frame = tk.Frame(self.root, bg=colors["window_bg"], padx=26, pady=10)
         self.top_frame.place(x=OUTER_PAD, y=OUTER_PAD - 4, relwidth=1, width=-(OUTER_PAD * 2), height=HEADER_HEIGHT)
 
         if self.header_logo:
-            tk.Label(self.top_frame, image=self.header_logo, bg=colors["window_bg"], bd=0).pack(side="left", padx=(0, 16), pady=(4, 0))
+            tk.Label(self.top_frame, image=self.header_logo, bg=colors["window_bg"], bd=0).pack(side="left", padx=(0, 14), pady=(2, 0))
 
         title_stack = tk.Frame(self.top_frame, bg=colors["window_bg"])
-        title_stack.pack(side="left", fill="x", expand=True, pady=(8, 0))
+        title_stack.pack(side="left", fill="x", expand=True, pady=(2, 0))
         ttk.Label(title_stack, text=APP_TITLE, style="TitleBar.TLabel").pack(anchor="w")
         ttk.Label(
             title_stack,
@@ -177,7 +182,7 @@ class App:
         ).pack(anchor="w", pady=(2, 0))
 
         top_controls = tk.Frame(self.top_frame, bg=colors["window_bg"])
-        top_controls.pack(side="right", pady=(10, 0))
+        top_controls.pack(side="right", pady=(2, 0))
         ttk.Label(top_controls, textvariable=self.status_var, style="TitleBarMuted.TLabel").pack(side="left", padx=(0, 12))
         ttk.Button(top_controls, text="Settings", command=self.show_settings).pack(side="left")
         ttk.Button(top_controls, text="About", command=self.show_about).pack(side="left", padx=(10, 0))
@@ -193,7 +198,7 @@ class App:
             x=OUTER_PAD,
             y=HEADER_HEIGHT + OUTER_PAD,
             relwidth=1,
-            width=-(PANEL_WIDTH + OUTER_PAD * 4),
+            width=-(PANEL_WIDTH + OUTER_PAD * 3),
             relheight=1,
             height=-(HEADER_HEIGHT + OUTER_PAD * 3),
         )
@@ -208,7 +213,7 @@ class App:
         )
         self.editor_shell.place(
             relx=1,
-            x=-(PANEL_WIDTH + OUTER_PAD * 2),
+            x=-(PANEL_WIDTH + OUTER_PAD),
             y=HEADER_HEIGHT + OUTER_PAD,
             width=PANEL_WIDTH,
             relheight=1,
@@ -318,12 +323,15 @@ class App:
             wrap="word",
         )
         self.payload_entry.pack(fill="x")
+        payload_actions = tk.Frame(wrap, bg=colors["panel_bg"])
+        payload_actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(payload_actions, text="Browse Action File", command=self.browse_action_file).pack(side="left")
 
-        self._stack_field(wrap, "Source Path", self.source_path_var, compact=True)
-        self._stack_field(wrap, "Custom Photo/Icon", self.icon_path_var, compact=True)
+        self._stack_field_with_button(wrap, "Source Path", self.source_path_var, self.browse_source_file, "Browse", compact=True)
+        self._stack_field_with_button(wrap, "Custom Photo/Icon", self.icon_path_var, self.choose_icon, "Browse", compact=True)
 
         utility_rows = [
-            ("Import App", self.import_app, "Choose Photo/Icon", self.choose_icon),
+            ("Import App", self.import_app, "Browse Source File", self.browse_source_file),
             ("Clear Art", self.clear_icon, "Use Current Name", self.use_source_name),
             ("Sync Label", self.sync_selected_label, "Sync All Labels", self.sync_all_labels),
         ]
@@ -390,6 +398,30 @@ class App:
             insertbackground=colors["field_fg"],
             relief="flat",
         ).pack(fill="x", ipady=2 if compact else 0)
+
+    def _stack_field_with_button(
+        self,
+        parent: tk.Widget,
+        label: str,
+        variable: tk.StringVar,
+        command: object,
+        button_text: str,
+        compact: bool = False,
+        top_padding: int = 12,
+    ) -> None:
+        colors = self._theme()
+        ttk.Label(parent, text=label, style="Deck.TLabel").pack(anchor="w", pady=(top_padding, 6))
+        row = tk.Frame(parent, bg=colors["panel_bg"])
+        row.pack(fill="x")
+        tk.Entry(
+            row,
+            textvariable=variable,
+            bg=colors["field_bg"],
+            fg=colors["field_fg"],
+            insertbackground=colors["field_fg"],
+            relief="flat",
+        ).pack(side="left", fill="x", expand=True, ipady=2 if compact else 0)
+        ttk.Button(row, text=button_text, command=command).pack(side="left", padx=(10, 0))
 
     def _refresh_page_tabs(self) -> None:
         ensure_page_shape(self.profile)
@@ -589,12 +621,7 @@ class App:
 
     def _sync_window_mode_with_layout(self) -> None:
         try:
-            if self.profile.cols == 3 and self.profile.rows == 2:
-                self.root.state("zoomed")
-            else:
-                if self.root.state() == "zoomed":
-                    self.root.state("normal")
-                self.root.geometry(self.default_geometry)
+            self.root.state("zoomed")
         except tk.TclError:
             pass
 
@@ -763,6 +790,32 @@ class App:
             self.apply_current_edits()
         except Exception as exc:
             messagebox.showerror("Image failed", str(exc))
+
+    def browse_source_file(self) -> None:
+        chosen = filedialog.askopenfilename(
+            title="Choose source file",
+            filetypes=[("All files", "*.*")],
+        )
+        if not chosen:
+            return
+        self.source_path_var.set(chosen)
+        if self.action_type_var.get() == "launch":
+            self.payload_entry.delete("1.0", tk.END)
+            self.payload_entry.insert("1.0", chosen)
+        self.apply_current_edits()
+
+    def browse_action_file(self) -> None:
+        chosen = filedialog.askopenfilename(
+            title="Choose file for this action",
+            filetypes=[("Apps and files", "*.exe *.lnk *.url *.bat *.cmd *.ps1 *.txt *.json *.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")],
+        )
+        if not chosen:
+            return
+        self.payload_entry.delete("1.0", tk.END)
+        self.payload_entry.insert("1.0", chosen)
+        if not self.source_path_var.get().strip():
+            self.source_path_var.set(chosen)
+        self.apply_current_edits()
 
     def clear_icon(self) -> None:
         self.icon_path_var.set("")

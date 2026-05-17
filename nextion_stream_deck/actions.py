@@ -4,6 +4,7 @@ import ctypes
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import time
 import webbrowser
@@ -86,10 +87,14 @@ def run_action(action_type: str, payload: str) -> str:
         if _looks_like_uri(target):
             os.startfile(target)
             return f"Launched {target}"
-        if ".exe" in target.lower() and " " in target.strip():
-            subprocess.Popen(target, shell=True)
-            return f"Started {target}"
         path_target = Path(target).expanduser()
+        if path_target.exists():
+            os.startfile(str(path_target))
+            return f"Launched {path_target}"
+        command_parts = shlex.split(target, posix=False)
+        if len(command_parts) > 1:
+            subprocess.Popen(command_parts, shell=False)
+            return f"Started {target}"
         os.startfile(str(path_target))
         return f"Launched {path_target}"
 
